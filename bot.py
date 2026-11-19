@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -384,6 +385,12 @@ def run(db_path, once=False):
                     if market.book(probe) is None:
                         raise RuntimeError("Market data unavailable; trading paused")
                 cycle(db, market, info, picks)
+                if os.environ.get("DATABASE_URL"):
+                    try:
+                        from mirror import sync as sync_to_postgres
+                        sync_to_postgres(db_path, os.environ["DATABASE_URL"])
+                    except Exception as mirror_error:
+                        LOG.exception("Kopia do PostgreSQL nieudana: %s", mirror_error)
             except Exception as exc:
                 LOG.exception("Cykl przerwany: %s", exc)
                 event(db, "ERROR", str(exc))
