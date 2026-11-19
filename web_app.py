@@ -109,25 +109,38 @@ def portfolio():
 def strategy_lab_results():
     if not authorized():
         return jsonify(error="unauthorized"), 401
-    path = Path(os.environ.get("STRATEGY_LAB_RESULTS", "strategy_lab_results/results.json"))
-    if not path.is_file():
-        return jsonify(status="NOT_RUN", message="Brak wyników backtestu. Uruchom strategy_lab.py i udostępnij results.json serwerowi dashboardu.", strategies=[]), 200
     try:
-        with path.open(encoding="utf-8") as stream:
-            data = json.load(stream)
-        strategies = data.get("strategies", [])
-        if not isinstance(strategies, list) or len(strategies) > 100:
-            raise ValueError("Invalid results")
-        return jsonify(status="BACKTEST", candles=data.get("candles"),
-                       first_timestamp=data.get("first_timestamp"),
-                       last_timestamp=data.get("last_timestamp"),
-                       strategies=[{key: item.get(key) for key in (
-                           "strategy", "family", "initial_usdt", "final_usdt",
-                           "return_pct", "max_drawdown_pct", "closed_trades",
-                           "win_rate_pct", "open_position")} for item in strategies])
-    except (OSError, ValueError, TypeError, KeyError):
-        LOG.exception("Invalid strategy lab results")
-        return jsonify(error="Nie można odczytać wyników backtestu"), 503
+        with psycopg.connect(os.environ["DASHBOARD_DATABASE_URL"], connect_timeout=5, row_factory=dict_row) as db:
+            with db.transaction():
+                db.execute("SET TRANSACTION READ ONLY")
+                rows=list(db.execute("SELECT * FROM paperbot.lab_portfolios ORDER BY strategy"))
+                last=db.execute("SELECT MAX(candle_ms) AS ts FROM paperbot.lab_snapshots").fetchone()["ts"]
+        strategies=[]
+        for r in rows:
+            # The last snapshot is the latest marked-to-market equity.
+            # No snapshot means this portfolio has not started trading yet.
+            strategies.append({"strategy":r["strategy"],"family":r["family"],
+                "initial_usdt":50,"final_usdt":round(float(r["cash_usdt"]),4) if not r["qty"] else None,
+                "return_pct":None,"max_drawdown_pct":round(float(r["max_drawdown_pct"]),2),
+                "closed_trades":r["closed_trades"],"win_rate_pct":round(100*r["wins"]/r["closed_trades"],2) if r["closed_trades"] else None,
+                "open_position":bool(r["qty"]),"last_candle_ms":r["last_candle_ms"]})
+        # Fetch last persisted equity per strategy (snapshot is written on each closed candle).
+        with psycopg.connect(os.environ["DASHBOARD_DATABASE_URL"], connect_timeout=5, row_factory=dict_row) as db:
+            with db.transaction():
+                db.execute("SET TRANSACTION READ ONLY")
+                latest={r["strategy"]:r["equity_usdt"] for r in db.execute("""
+                    SELECT DISTINCT ON (strategy) strategy,equity_usdt
+                    FROM paperbot.lab_snapshots ORDER BY strategy,candle_ms DESC""")}
+        for r in strategies:
+            if r["strategy"] in latest:
+                r["final_usdt"]=round(latest[r["strategy"]],4)
+                r["return_pct"]=round((latest[r["strategy"]]/50-1)*100,3)
+        return jsonify(status="FORWARD" if last else "WAITING",last_update_ms=last,
+                       strategies=strategies,message="Oczekiwanie na pierwszą zamkniętą świecę" if not last else None)
+    except (psycopg.Error, KeyError, ValueError) as exc:
+        LOG.warning("Forward lab unavailable: %s",exc)
+        return jsonify(status="NOT_CONFIGURED",strategies=[],
+                       message="Laboratorium nie jest jeszcze uruchomione lub brakuje uprawnień do tabel.")
 
 
 if __name__ == "__main__":
