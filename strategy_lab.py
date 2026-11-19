@@ -124,7 +124,7 @@ def run(data, output):
         writer=csv.DictWriter(f,fieldnames=cols);writer.writeheader()
         for result in sorted(results,key=lambda x:x['return_pct'],reverse=True):writer.writerow({k:result[k] for k in cols})
     (output/'results.json').write_text(json.dumps({'disclaimer':'Research only; no live execution; OHLC approximation, no order-book or exchange min-notional simulation',
-          'candles':len(data),'strategies':results},ensure_ascii=False),encoding='utf-8')
+          'candles':len(data),'first_timestamp':int(data[0][0]*1000),'last_timestamp':int(data[-1][0]*1000),'strategies':results},ensure_ascii=False),encoding='utf-8')
     print(f'Completed {len(results)} strategies. Results: {output / "ranking.csv"}')
 
 

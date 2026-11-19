@@ -1,5 +1,7 @@
 """Read-only portfolio dashboard. Requires a PostgreSQL read-only role."""
 import hmac
+import json
+from pathlib import Path
 import logging
 import os
 import time
@@ -101,6 +103,31 @@ def portfolio():
     except (psycopg.Error, KeyError, ValueError) as exc:
         LOG.exception("Dashboard read failed: %s", exc)
         return jsonify(error="Baza danych jest chwilowo niedostępna"), 503
+
+
+@app.get("/api/strategy-lab")
+def strategy_lab_results():
+    if not authorized():
+        return jsonify(error="unauthorized"), 401
+    path = Path(os.environ.get("STRATEGY_LAB_RESULTS", "strategy_lab_results/results.json"))
+    if not path.is_file():
+        return jsonify(status="NOT_RUN", message="Brak wyników backtestu. Uruchom strategy_lab.py i udostępnij results.json serwerowi dashboardu.", strategies=[]), 200
+    try:
+        with path.open(encoding="utf-8") as stream:
+            data = json.load(stream)
+        strategies = data.get("strategies", [])
+        if not isinstance(strategies, list) or len(strategies) > 100:
+            raise ValueError("Invalid results")
+        return jsonify(status="BACKTEST", candles=data.get("candles"),
+                       first_timestamp=data.get("first_timestamp"),
+                       last_timestamp=data.get("last_timestamp"),
+                       strategies=[{key: item.get(key) for key in (
+                           "strategy", "family", "initial_usdt", "final_usdt",
+                           "return_pct", "max_drawdown_pct", "closed_trades",
+                           "win_rate_pct", "open_position")} for item in strategies])
+    except (OSError, ValueError, TypeError, KeyError):
+        LOG.exception("Invalid strategy lab results")
+        return jsonify(error="Nie można odczytać wyników backtestu"), 503
 
 
 if __name__ == "__main__":
