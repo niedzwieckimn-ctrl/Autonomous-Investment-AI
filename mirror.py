@@ -3,6 +3,8 @@ import argparse
 import logging
 import os
 import sqlite3
+from contextlib import closing
+from pathlib import Path
 
 import psycopg
 
@@ -21,13 +23,29 @@ CREATE TABLE IF NOT EXISTS paperbot.positions (symbol text PRIMARY KEY, qty text
 CREATE TABLE IF NOT EXISTS paperbot.trades (id bigint PRIMARY KEY, ts_ms bigint NOT NULL, symbol text NOT NULL, side text NOT NULL, qty text NOT NULL, bid text NOT NULL, ask text NOT NULL, fill_price text NOT NULL, gross_usdt text NOT NULL, fee_usdt text NOT NULL, pnl_usdt text, reason text NOT NULL, cash_after_usdt text NOT NULL, equity_after_usdt text NOT NULL);
 CREATE TABLE IF NOT EXISTS paperbot.snapshots (id bigint PRIMARY KEY, ts_ms bigint NOT NULL, equity_usdt text NOT NULL, cash_usdt text NOT NULL, note text NOT NULL);
 CREATE TABLE IF NOT EXISTS paperbot.events (id bigint PRIMARY KEY, ts_ms bigint NOT NULL, level text NOT NULL, message text NOT NULL);
-REVOKE ALL ON SCHEMA paperbot FROM PUBLIC;
 """
+
+
+def ensure_backup(source):
+    """Keep one consistent copy of the live SQLite file before first mirroring."""
+    source_path = Path(source).resolve()
+    backup_path = source_path.with_name(source_path.stem + "-before-mirror.sqlite3")
+    if backup_path.exists():
+        return backup_path
+    temporary = backup_path.with_suffix(".tmp")
+    with closing(sqlite3.connect(source_path.as_uri() + "?mode=ro", uri=True)) as original:
+        with closing(sqlite3.connect(temporary)) as backup:
+            original.backup(backup)
+            backup.commit()
+    os.replace(temporary, backup_path)
+    LOG.info("SQLite backup created: %s", backup_path)
+    return backup_path
 
 
 def sync(source, dsn):
     """One consistent SQLite read transaction, one PostgreSQL write transaction."""
-    with sqlite3.connect(f"file:{os.path.abspath(source)}?mode=ro", uri=True, timeout=15) as local:
+    ensure_backup(source)
+    with sqlite3.connect(Path(source).resolve().as_uri() + "?mode=ro", uri=True, timeout=15) as local:
         local.row_factory = sqlite3.Row
         local.execute("BEGIN")
         copied = {name: [tuple(row[c] for c in columns) for row in local.execute(f"SELECT {','.join(columns)} FROM {name} ORDER BY {columns[0]}")]

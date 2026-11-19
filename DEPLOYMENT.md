@@ -20,14 +20,13 @@ Jeśli worker łączy się przez rolę inną niż `postgres`, wykonaj `ALTER DEF
 
 ## 2. Zabezpiecz dane przed pierwszą synchronizacją
 
-1. W Render otwórz **istniejący Background Worker → Shell**. Nie uruchamiaj drugiego bota.
-2. Zrób kopię SQLite przez API backup, które daje spójny obraz mimo działania bota:
+Przy pierwszej synchronizacji `mirror.py` automatycznie utworzy na trwałym dysku spójną kopię `/var/data/paperbot-before-mirror.sqlite3`. Kolejne synchronizacje jej nie nadpiszą. Możesz też wykonać kopię wcześniej przez **Render → istniejący Background Worker → Shell**:
 
 ```bash
 python -c "import sqlite3; s=sqlite3.connect('/var/data/paperbot.sqlite3'); d=sqlite3.connect('/var/data/paperbot-before-mirror.sqlite3'); s.backup(d); d.close(); s.close()"
 ```
 
-3. Zanotuj aktualne dane (bez ich modyfikowania):
+Jeśli masz dostęp do Shell, zanotuj aktualne dane (bez ich modyfikowania):
 
 ```bash
 python -c "import sqlite3; d=sqlite3.connect('/var/data/paperbot.sqlite3'); print(dict(d.execute('select key,value from meta'))); print('trades',d.execute('select count(*) from trades').fetchone()[0]); print('snapshots',d.execute('select count(*) from snapshots').fetchone()[0]); print('positions',d.execute('select count(*) from positions').fetchone()[0])"
@@ -64,4 +63,3 @@ python mirror.py --source /var/data/paperbot.sqlite3
 - Nie przywracaj kopii SQLite bez sprawdzenia, czy nowsze transakcje nie powstały od czasu backupu.
 
 Lokalny panel Streamlit (`dashboard.py`) pozostaje dostępny do pracy na lokalnej SQLite. Publiczny panel Render to `web_app.py`.
-
