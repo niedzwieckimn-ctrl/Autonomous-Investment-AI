@@ -7,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 LOG = logging.getLogger(__name__)
 TABLES = {
@@ -42,6 +43,17 @@ def ensure_backup(source):
     return backup_path
 
 
+def pooler_connection(dsn, project_ref):
+    """Complete a short postgres username for a Supabase session pooler."""
+    if not project_ref:
+        return dsn
+    options = conninfo_to_dict(dsn)
+    if options.get("user") == "postgres" and options.get("host", "").endswith(".pooler.supabase.com"):
+        options["user"] = "postgres." + project_ref
+        return make_conninfo(**options)
+    return dsn
+
+
 def sync(source, dsn):
     """One consistent SQLite read transaction, one PostgreSQL write transaction."""
     ensure_backup(source)
@@ -50,7 +62,7 @@ def sync(source, dsn):
         local.execute("BEGIN")
         copied = {name: [tuple(row[c] for c in columns) for row in local.execute(f"SELECT {','.join(columns)} FROM {name} ORDER BY {columns[0]}")]
                   for name, columns in TABLES.items()}
-        with psycopg.connect(dsn, connect_timeout=10) as remote:
+        with psycopg.connect(pooler_connection(dsn, os.environ.get("SUPABASE_PROJECT_REF")), connect_timeout=10) as remote:
             with remote.transaction():
                 remote.execute(SCHEMA)
                 for name, columns in TABLES.items():

@@ -4,10 +4,16 @@ import unittest
 from contextlib import closing
 from pathlib import Path
 
-from mirror import ensure_backup
+from mirror import ensure_backup, pooler_connection
 
 
 class BackupTests(unittest.TestCase):
+    def test_pooler_user_is_completed_only_for_expected_host(self):
+        short = "postgresql://postgres:example@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
+        self.assertIn("postgres.smzzzpdhvbjnfuzsgygf", pooler_connection(short, "smzzzpdhvbjnfuzsgygf"))
+        self.assertEqual(pooler_connection(short, None), short)
+        self.assertEqual(pooler_connection("postgresql://postgres:example@other.example.com/db", "ref"), "postgresql://postgres:example@other.example.com/db")
+
     def test_backup_is_consistent_and_not_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "paperbot.sqlite3"
