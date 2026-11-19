@@ -24,3 +24,17 @@ Wyniki: `ranking.csv` i `results.json` (z przebiegami wartości portfeli).
 - Strategie są hipotezami badawczymi. Nie należy wybierać zwycięzcy tylko po najlepszym wyniku z próby historycznej.
 
 Kolejne kroki: pobieranie i walidacja danych, podział train/validation/out-of-sample, walidacja walk-forward, realistyczne filtry giełdowe, wielorynkowe portfele i niezależny moduł live paper trading.
+
+## Automatyczne pobieranie historii — v2
+
+Nie trzeba ręcznie przygotowywać CSV. Uruchom w katalogu projektu:
+
+```bash
+python download_history.py --symbol BTCUSDT --interval 15m --start 2024-01-01 --end 2026-11-01
+python strategy_lab.py --csv data/history/BTCUSDT_15m_2024-01-01_2026-11-01.csv --output strategy_lab_results/BTCUSDT
+python -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+`--end` oznacza wyłączną datę końcową UTC. Pobieranie odbywa się stronicowo (maks. 1000 świec na żądanie), bez kluczy API. Downloader odrzuca duplikaty i przerwy w danych, nie dopisuje niezamkniętych świec. Może wystąpić blokada regionalna HTTP 451; wtedy pobierz dane z dozwolonej lokalizacji lub skorzystaj z oficjalnego archiwum Binance Data Vision.
+
+**Nowy plik:** `download_history.py` w katalogu głównym; `tests/test_download_history.py` w `tests/`. Pozostałe pliki z v1 bez zmian. Nie zmieniać `bot.py`, `web_app.py`, `render.yaml`, `mirror.py` ani bazy istniejącego bota. To nadal tylko backtest pojedynczego rynku; brak 30-dniowego paper tradingu i ograniczeń minimalnych zleceń Binance.
