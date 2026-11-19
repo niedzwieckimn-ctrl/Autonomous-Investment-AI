@@ -133,11 +133,14 @@ class Market:
         self.symbols = []
         self.ws = None
         self.running = False
+        self.ws_restricted = False
 
     def get(self, path, **params):
         for attempt in range(4):
             try:
                 response = self.session.get(REST + path, params=params, timeout=10)
+                if response.status_code == 451:
+                    raise RuntimeError("Binance REST HTTP 451: restricted location")
                 if response.status_code in (418, 429):
                     delay = min(int(response.headers.get("Retry-After", 10)), 120)
                     time.sleep(delay)
@@ -163,6 +166,9 @@ class Market:
 
     def _ws_loop(self):
         while self.running:
+            if self.ws_restricted:
+                LOG.error("Binance WebSocket blocked (451); REST fallback only")
+                return
             if not self.symbols:
                 time.sleep(2)
                 continue
@@ -175,7 +181,13 @@ class Market:
                         self.quotes[data["s"]] = q
                 except (KeyError, ValueError):
                     pass
-            self.ws = WebSocketApp(WS + streams, on_message=on_message, on_error=lambda _w, e: LOG.warning("WebSocket: %s", e))
+            def on_error(_ws, exc):
+                if "451" in str(exc) and "Handshake" in str(exc):
+                    self.ws_restricted = True
+                    LOG.error("Binance WebSocket HTTP 451; stopping retries")
+                else:
+                    LOG.warning("WebSocket: %s", exc)
+            self.ws = WebSocketApp(WS + streams, on_message=on_message, on_error=on_error)
             self.ws.run_forever(ping_interval=20, ping_timeout=10)
             time.sleep(3)
 
@@ -367,6 +379,10 @@ def run(db_path, once=False):
                     held = [r[0] for r in db.execute("SELECT symbol FROM positions")]
                     market.set_symbols(list(picks) + held)
                     refreshed = time.time()
+                if picks:
+                    probe = next(iter(picks))
+                    if market.book(probe) is None:
+                        raise RuntimeError("Market data unavailable; trading paused")
                 cycle(db, market, info, picks)
             except Exception as exc:
                 LOG.exception("Cykl przerwany: %s", exc)
