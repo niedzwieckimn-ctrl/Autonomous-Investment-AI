@@ -10,17 +10,10 @@ Potrzebne są: istniejący płatny Render Background Worker z dyskiem; istnieją
 
 1. Użyj projektu `niedzwieccy-restore-test-20261029`. Schemat i tabele `paperbot` zostały już utworzone. Zachowaj hasło bazy w menedżerze haseł.
 2. W `Project Settings → Database → Connection string` skopiuj adres połączenia dla workera. Render obsługuje IPv4; jeśli adres bezpośredni wymaga IPv6, wybierz Session Pooler. Użyj połączenia TLS (`sslmode=require`).
-3. W `SQL Editor` wykonaj poniższy skrypt, zastępując `TU_WLASNE_SILNE_HASLO` własnym długim hasłem. To konto służy wyłącznie panelowi. Nie zapisuj tego hasła w repozytorium.
+3. Rola `paperbot_reader` z uprawnieniem wyłącznie do odczytu schematu `paperbot` została już utworzona jako `NOLOGIN`. W `SQL Editor` wykonaj poniższy skrypt, zastępując `TU_WLASNE_SILNE_HASLO` własnym długim hasłem. To konto służy wyłącznie panelowi. Nie zapisuj tego hasła w repozytorium.
 
 ```sql
-CREATE SCHEMA IF NOT EXISTS paperbot;
-REVOKE ALL ON SCHEMA paperbot FROM PUBLIC;
-CREATE ROLE paperbot_reader LOGIN PASSWORD 'TU_WLASNE_SILNE_HASLO';
-GRANT CONNECT ON DATABASE postgres TO paperbot_reader;
-GRANT USAGE ON SCHEMA paperbot TO paperbot_reader;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA paperbot
-  GRANT SELECT ON TABLES TO paperbot_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA paperbot TO paperbot_reader;
+ALTER ROLE paperbot_reader LOGIN PASSWORD 'TU_WLASNE_SILNE_HASLO';
 ```
 
 Jeśli worker łączy się przez rolę inną niż `postgres`, wykonaj `ALTER DEFAULT PRIVILEGES FOR ROLE <rola_workera> ...` dla tej roli. Po pierwszej synchronizacji ponów `GRANT SELECT ON ALL TABLES IN SCHEMA paperbot TO paperbot_reader;`, jeśli konto panelu nie widzi tabel. Adres panelu to ten sam host/pooler i baza, z użytkownikiem `paperbot_reader` i jego hasłem. Hasło w adresie URL musi być zakodowane percent encoding, jeśli ma znaki specjalne.
