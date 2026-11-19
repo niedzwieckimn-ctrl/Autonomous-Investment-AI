@@ -1,0 +1,71 @@
+# Panel na Render — wdrożenie bez resetowania portfela
+
+Źródłem prawdy pozostaje istniejąca baza workera: `/var/data/paperbot.sqlite3`. Po każdym cyklu worker kopiuje aktualny stan do PostgreSQL. Panel odczytuje wyłącznie PostgreSQL. Kopia jest idempotentna i nie składa żadnych zleceń. Nie uruchamiaj `bot.py` jako Web Service ani drugiego Background Workera.
+
+## Usługi i koszt
+
+Potrzebne są: istniejący płatny Render Background Worker z dyskiem; jedna baza PostgreSQL dostępna z Render (np. osobny projekt Supabase); jeden Render Web Service. Wariant `render.yaml` wybiera bezpłatny Web Service, który może zasypiać i wolniej odpowiadać po bezczynności. Supabase pokazał dodatkowy koszt nowego projektu **10 USD/miesiąc** na koncie użytkownika; nie twórz go przed zatwierdzeniem tej ceny. Aktualne stawki trzeba sprawdzić w oknie potwierdzenia usług przed włączeniem.
+
+## 1. Przygotuj PostgreSQL
+
+1. Utwórz osobny projekt Supabase dla bota. Zachowaj hasło bazy w menedżerze haseł.
+2. W `Project Settings → Database → Connection string` skopiuj adres połączenia dla workera. Render obsługuje IPv4; jeśli adres bezpośredni wymaga IPv6, wybierz Session Pooler. Użyj połączenia TLS (`sslmode=require`).
+3. W `SQL Editor` wykonaj poniższy skrypt, zastępując `TU_WLASNE_SILNE_HASLO` własnym długim hasłem. To konto służy wyłącznie panelowi. Nie zapisuj tego hasła w repozytorium.
+
+```sql
+CREATE SCHEMA IF NOT EXISTS paperbot;
+REVOKE ALL ON SCHEMA paperbot FROM PUBLIC;
+CREATE ROLE paperbot_reader LOGIN PASSWORD 'TU_WLASNE_SILNE_HASLO';
+GRANT CONNECT ON DATABASE postgres TO paperbot_reader;
+GRANT USAGE ON SCHEMA paperbot TO paperbot_reader;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA paperbot
+  GRANT SELECT ON TABLES TO paperbot_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA paperbot TO paperbot_reader;
+```
+
+Jeśli worker łączy się przez rolę inną niż `postgres`, wykonaj `ALTER DEFAULT PRIVILEGES FOR ROLE <rola_workera> ...` dla tej roli. Po pierwszej synchronizacji ponów `GRANT SELECT ON ALL TABLES IN SCHEMA paperbot TO paperbot_reader;`, jeśli konto panelu nie widzi tabel. Adres panelu to ten sam host/pooler i baza, z użytkownikiem `paperbot_reader` i jego hasłem. Hasło w adresie URL musi być zakodowane percent encoding, jeśli ma znaki specjalne.
+
+## 2. Zabezpiecz dane przed pierwszą synchronizacją
+
+1. W Render otwórz **istniejący Background Worker → Shell**. Nie uruchamiaj drugiego bota.
+2. Zrób kopię SQLite przez API backup, które daje spójny obraz mimo działania bota:
+
+```bash
+python -c "import sqlite3; s=sqlite3.connect('/var/data/paperbot.sqlite3'); d=sqlite3.connect('/var/data/paperbot-before-mirror.sqlite3'); s.backup(d); d.close(); s.close()"
+```
+
+3. Zanotuj aktualne dane (bez ich modyfikowania):
+
+```bash
+python -c "import sqlite3; d=sqlite3.connect('/var/data/paperbot.sqlite3'); print(dict(d.execute('select key,value from meta'))); print('trades',d.execute('select count(*) from trades').fetchone()[0]); print('snapshots',d.execute('select count(*) from snapshots').fetchone()[0]); print('positions',d.execute('select count(*) from positions').fetchone()[0])"
+```
+
+Jeżeli plan Render nie udostępnia Shell, użyj **SSH** lub jednorazowej komendy administracyjnej w istniejącym workerze. Nie kopiuj pliku SQLite przez zwykłe `cp` podczas aktywnego zapisu.
+
+## 3. Włącz replikację w istniejącym workerze
+
+1. W **Environment** istniejącego workera dodaj `DATABASE_URL` z adresem zapisu PostgreSQL (rola `postgres`, TLS). Nie dodawaj tego adresu do GitHub.
+2. Wdróż commit tego repozytorium do tego samego workera. Zachowaj obecny Start Command: `python bot.py --db /var/data/paperbot.sqlite3`, dysk `/var/data` i jedną instancję.
+3. W Shell istniejącego workera wykonaj jednorazową kopię, bez uruchamiania bota:
+
+```bash
+python mirror.py --source /var/data/paperbot.sqlite3
+```
+
+4. Sprawdź w logach komunikat `Mirror updated`. Automatyczna aktualizacja odbywa się po każdym cyklu. Gdy PostgreSQL jest chwilowo niedostępny, bot nadal działa na SQLite; błąd synchronizacji trafia do logu i następny cykl ponawia pełną kopię.
+
+## 4. Wdróż panel
+
+1. W Render wybierz **New → Blueprint** i wskaż to repozytorium/gałąź `main` z plikiem `render.yaml`. Blueprint tworzy tylko Web Service `autonomous-investment-dashboard`; nie tworzy workera.
+2. W formularzu ustaw sekrety `DASHBOARD_DATABASE_URL` (konto `paperbot_reader`) i `DASHBOARD_PASSWORD` (silne, osobne hasło do panelu). `DASHBOARD_SESSION_SECRET` jest losowany przez Render. Nie ujawniaj żadnego z nich w przeglądarce ani kodzie.
+3. Po wdrożeniu odwiedź `/health`, potem `/login`. Zaloguj się i sprawdź, czy wartość portfela, liczba transakcji i otwarte pozycje odpowiadają stanowi SQLite z kroku 2. Panel pobiera dane co 15 sekund. Status ONLINE wymaga ostatniej wyceny i synchronizacji młodszych niż 180 sekund.
+4. Ustaw automatyczne wdrażanie z GitHub dla Web Service. Jest również w `render.yaml` (`autoDeployTrigger: commit`).
+
+## Diagnostyka i wycofanie
+
+- `503` w `/api/portfolio`: sprawdź `DASHBOARD_DATABASE_URL`, sieć/TLS, czy `paperbot_reader` ma `SELECT` na `paperbot.*`, oraz logi Web Service. Dane logowania nie trafiają do klienta.
+- `OFFLINE`: sprawdź logi istniejącego workera i ostatni `snapshots.ts_ms` oraz `sync_status.synced_at`; panel nie uruchamia bota.
+- Aby wyłączyć replikację, usuń `DATABASE_URL` z workera. SQLite i jego stan pozostają bez zmian. Możesz wyłączyć Web Service bez wpływu na transakcje.
+- Nie przywracaj kopii SQLite bez sprawdzenia, czy nowsze transakcje nie powstały od czasu backupu.
+
+Lokalny panel Streamlit (`dashboard.py`) pozostaje dostępny do pracy na lokalnej SQLite. Publiczny panel Render to `web_app.py`.

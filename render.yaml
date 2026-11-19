@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: autonomous-investment-dashboard
+    runtime: python
+    region: virginia
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn web_app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 30
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: DASHBOARD_DATABASE_URL
+        sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: DASHBOARD_SESSION_SECRET
+        generateValue: true
