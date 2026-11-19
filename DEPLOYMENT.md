@@ -4,11 +4,11 @@
 
 ## Usługi i koszt
 
-Potrzebne są: istniejący płatny Render Background Worker z dyskiem; jedna baza PostgreSQL dostępna z Render (np. osobny projekt Supabase); jeden Render Web Service. Wariant `render.yaml` wybiera bezpłatny Web Service, który może zasypiać i wolniej odpowiadać po bezczynności. Supabase pokazał dodatkowy koszt nowego projektu **10 USD/miesiąc** na koncie użytkownika; nie twórz go przed zatwierdzeniem tej ceny. Aktualne stawki trzeba sprawdzić w oknie potwierdzenia usług przed włączeniem.
+Potrzebne są: istniejący płatny Render Background Worker z dyskiem; istniejący projekt Supabase `niedzwieccy-restore-test-20261029` z osobnym schematem `paperbot`; jeden Render Web Service. Wariant `render.yaml` wybiera bezpłatny Web Service, który może zasypiać i wolniej odpowiadać po bezczynności. Nie twórz nowego projektu Supabase (użytkownik odrzucił dodatkowy koszt 10 USD/miesiąc). Aktualne stawki i limity istniejącego projektu oraz Render trzeba sprawdzić przed włączeniem.
 
 ## 1. Przygotuj PostgreSQL
 
-1. Utwórz osobny projekt Supabase dla bota. Zachowaj hasło bazy w menedżerze haseł.
+1. Użyj projektu `niedzwieccy-restore-test-20261029`. Schemat i tabele `paperbot` zostały już utworzone. Zachowaj hasło bazy w menedżerze haseł.
 2. W `Project Settings → Database → Connection string` skopiuj adres połączenia dla workera. Render obsługuje IPv4; jeśli adres bezpośredni wymaga IPv6, wybierz Session Pooler. Użyj połączenia TLS (`sslmode=require`).
 3. W `SQL Editor` wykonaj poniższy skrypt, zastępując `TU_WLASNE_SILNE_HASLO` własnym długim hasłem. To konto służy wyłącznie panelowi. Nie zapisuj tego hasła w repozytorium.
 
