@@ -49,10 +49,10 @@ python mirror.py --source /var/data/paperbot.sqlite3
 
 ## 4. Wdróż panel
 
-1. W Render wybierz **New → Blueprint** i wskaż to repozytorium/gałąź `main` z plikiem `render.yaml`. Blueprint tworzy tylko Web Service `autonomous-investment-dashboard`; nie tworzy workera.
-2. W formularzu ustaw sekrety `DASHBOARD_DATABASE_URL` (konto `paperbot_reader`) i `DASHBOARD_PASSWORD` (silne, osobne hasło do panelu). `DASHBOARD_SESSION_SECRET` jest losowany przez Render. Nie ujawniaj żadnego z nich w przeglądarce ani kodzie.
-3. Po wdrożeniu odwiedź `/health`, potem `/login`. Zaloguj się i sprawdź, czy wartość portfela, liczba transakcji i otwarte pozycje odpowiadają stanowi SQLite z kroku 2. Panel pobiera dane co 15 sekund. Status ONLINE wymaga ostatniej wyceny i synchronizacji młodszych niż 180 sekund.
-4. Ustaw automatyczne wdrażanie z GitHub dla Web Service. Jest również w `render.yaml` (`autoDeployTrigger: commit`).
+1. Web Service `autonomous-investment-dashboard` został już utworzony na planie Free z gałęzi `feature/render-dashboard-mirror` i ma włączone automatyczne wdrażanie commitów. [Otwórz usługę w Render](https://dashboard.render.com/web/srv-dbvfjarl550s739kphr0). Po scaleniu PR zmień jej gałąź na `main`. Plik `render.yaml` służy jako odtwarzalna konfiguracja; nie twórz drugiej usługi z Blueprint.
+2. W **Environment** tej usługi ustaw `DASHBOARD_DATABASE_URL` (konto `paperbot_reader`) i `DASHBOARD_PASSWORD` (silne, osobne hasło do panelu). `DASHBOARD_SESSION_SECRET` został wygenerowany losowo i ustawiony w Render. Nie ujawniaj żadnego z sekretów w kodzie ani publicznym widoku panelu.
+3. W **Settings → Health Check Path** ustaw `/health`.
+4. Po wdrożeniu odwiedź `/health`, potem `/login`. Zaloguj się i sprawdź, czy wartość portfela, liczba transakcji i otwarte pozycje odpowiadają stanowi SQLite z kroku 2. Panel pobiera dane co 15 sekund. Status ONLINE wymaga ostatniej wyceny i synchronizacji młodszych niż 180 sekund.
 
 ## Diagnostyka i wycofanie
 
@@ -62,3 +62,4 @@ python mirror.py --source /var/data/paperbot.sqlite3
 - Nie przywracaj kopii SQLite bez sprawdzenia, czy nowsze transakcje nie powstały od czasu backupu.
 
 Lokalny panel Streamlit (`dashboard.py`) pozostaje dostępny do pracy na lokalnej SQLite. Publiczny panel Render to `web_app.py`.
+
