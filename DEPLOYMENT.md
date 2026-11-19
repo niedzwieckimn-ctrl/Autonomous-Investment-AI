@@ -35,6 +35,8 @@ python -c "import sqlite3; d=sqlite3.connect('/var/data/paperbot.sqlite3'); prin
 
 Jeżeli plan Render nie udostępnia Shell, użyj **SSH** lub jednorazowej komendy administracyjnej w istniejącym workerze. Nie kopiuj pliku SQLite przez zwykłe `cp` podczas aktywnego zapisu.
 
+**Uwaga bezpieczeństwa:** Supabase zgłasza ogólne ostrzeżenie o braku RLS dla sześciu tabel `paperbot`. Weryfikacja uprawnień wykazała, że role `anon` i `authenticated` nie mają ani `USAGE` na schemacie, ani `SELECT` na `paperbot.trades`; schemat nie jest publicznie udostępniony przez API. Jeśli w przyszłości ktoś nada tym rolom dostęp do schematu, należy najpierw włączyć RLS i przygotować właściwe polityki.
+
 ## 3. Włącz replikację w istniejącym workerze
 
 1. W **Environment** istniejącego workera dodaj `DATABASE_URL` z adresem zapisu PostgreSQL (rola `postgres`, TLS). Nie dodawaj tego adresu do GitHub.
